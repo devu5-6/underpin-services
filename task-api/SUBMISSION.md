@@ -6,9 +6,9 @@
 
 ## 1. Summary
 
-I read the source in `src/` end to end before writing anything, then wrote 65
+I read the source in `src/` end to end before writing anything, then wrote 73
 tests against the documented contract in `README.md` — 26 unit tests against
-`taskService` directly, 39 integration tests driving the real Express app through
+`taskService` directly, 47 integration tests driving the real Express app through
 Supertest.
 
 The suite surfaced **four genuine bugs**, all of them silent-corruption or
@@ -21,7 +21,7 @@ cases.
 
 | Deliverable | Where | Status |
 |---|---|---|
-| Test suite (65 tests) | `tests/` | Complete — 96.17% statements, 91.2% branches |
+| Test suite (73 tests) | `tests/` | Complete — 96.17% statements, 91.2% branches |
 | Bug report (4 bugs) | `BUG_REPORT.md` | Complete |
 | Bug fix (pagination) | `src/services/taskService.js:22` | Complete, tests updated |
 | `PATCH /tasks/:id/assign` | `src/routes/tasks.js:81`, `src/services/taskService.js:110` | Complete, 11 tests |
@@ -41,7 +41,7 @@ they are all the same mistake in four places.
 `README.md` and `ASSIGNMENT.md`, wrote assertions against those, and treated
 mismatches as findings rather than adjusting the assertions to match the code.
 That ordering is the whole reason four bugs were found rather than zero — had I
-written tests to match observed behaviour, all 65 would have passed on day one
+written tests to match observed behaviour, all 73 would have passed on day one
 and told me nothing.
 
 **Test through the public surface.** Unit tests call `taskService` functions
@@ -197,7 +197,54 @@ before spending a slot on it.
 
 ---
 
-## 6. Questions I'd ask before shipping
+## 6. What surprised me
+
+**The bugs are not four independent bugs — they are one mistake in four places.**
+Three of the four (`#2`, `#3`, `#4`) come from the same pattern: caller-supplied
+data spread onto a stored object with no boundary in between. `getByStatus` lets
+a query string decide the comparison operator, `completeTask` re-applies a
+creation-time default, `update` merges an unfiltered body. Once I had found the
+third one I stopped treating them as separate findings and started asking "where
+else does raw input meet the store", which is how I knew there was nothing left
+to find. I would not have made that connection from reading the code once.
+
+**Every one of the four is invisible in code review.** None of them is
+conspicuous: `priority: 'medium'` reads as a default, `{ ...task, ...fields }`
+reads as idiomatic shorthand, `String.includes` reads as a reasonable choice
+between `===` and a regex. All three are lines that would pass any review I have
+attended. This is the strongest argument I can make for why the test suite is
+worth more than the code review it replaced.
+
+**The README documents an API that does not exist.** It specifies
+`pending` / `in-progress` / `completed`; the code implements `todo` /
+`in_progress` / `done`. It also implies a separate store, while `taskService`
+owns the data itself. A client written from the README alone would get a `400`
+on its first create. I tested the code, since that is what actually runs — but
+this is the kind of drift that makes "the docs say it works" a false signal, and
+it is worth reconciling before anyone trusts either artifact.
+
+**`VALID_STATUSES` is declared in `src/routes/tasks.js:6` and never used.** A
+module-level constant, defined correctly, in the exact file that would need it
+to validate `?status=`, left dead. That is a strong tell: someone intended the
+`400` for unknown statuses, started it, and stopped. It also confirms Bug #2 is
+a half-finished feature rather than a design decision, which changes how I would
+talk to the person who wrote it.
+
+**The test-only `_reset()` export is in production code.** `taskService._reset`
+(`taskService.js:123`) is a public export of a production module, used by nothing
+but the tests. Correct and pragmatic, but it means the store has two
+initialisation paths and a test can silently wipe live state if it ever leaks
+into non-test code.
+
+**The in-memory store is shared mutable module state, and nothing guards it.**
+`tasks` is reassigned by `_reset()` but the array is mutated in place by
+`create`, so a reference captured before a reset points at the old array. Harmless
+today because nothing holds a long-lived reference, but it is a sharp edge that
+`const` does not protect against.
+
+---
+
+## 7. Questions I'd ask before shipping
 
 **Who consumes this, and is the current pagination contract already depended
 upon?** My fix changes results for anyone who worked around the old behaviour. I
@@ -233,13 +280,13 @@ client written from the README alone would fail against this API.
 
 ---
 
-## 7. Test results
+## 8. Test results
 
 ```
 $ npm run coverage
 
 Test Suites: 3 passed, 3 total
-Tests:       65 passed, 65 total
+Tests:       73 passed, 73 total
 Snapshots:   0 total
 
 File             | % Stmts | % Branch | % Funcs | % Lines | Uncovered
@@ -265,7 +312,7 @@ directory-level figure underneath it.
 | File | Tests | Covers |
 |---|---:|---|
 | `tests/taskService.test.js` | 26 | Every `taskService` function directly, including defaults, immutability of returned copies, unknown-id paths, and 2 `BUG:` regressions |
-| `tests/tasks.routes.test.js` | 28 | All 8 endpoints via Supertest — happy path plus edge cases for each, including 3 `BUG:` regressions |
+| `tests/tasks.routes.test.js` | 36 | All 8 endpoints via Supertest — happy path plus at least 2 edge cases for each, including 3 `BUG:` regressions |
 | `tests/tasks.assign.routes.test.js` | 11 | The new endpoint: persistence, reassignment, non-clobbering, trimming, 4 validation rejections, 404, and no-mutation-on-failure |
 
 ### Reproducing
