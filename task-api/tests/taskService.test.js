@@ -172,6 +172,35 @@ describe('completeTask', () => {
   });
 });
 
+describe('assignTask', () => {
+  it('sets the assignee and stamps assignedAt', () => {
+    const created = taskService.create({ title: 'a' });
+    const assigned = taskService.assignTask(created.id, 'Alice');
+
+    expect(assigned.assignee).toBe('Alice');
+    expect(new Date(assigned.assignedAt).toString()).not.toBe('Invalid Date');
+  });
+
+  it('persists the assignment in the store', () => {
+    const created = taskService.create({ title: 'a' });
+    taskService.assignTask(created.id, 'Alice');
+
+    expect(taskService.findById(created.id).assignee).toBe('Alice');
+  });
+
+  it('overwrites a previous assignee (reassignment allowed)', () => {
+    const created = taskService.create({ title: 'a' });
+    taskService.assignTask(created.id, 'Alice');
+    const reassigned = taskService.assignTask(created.id, 'Bob');
+
+    expect(reassigned.assignee).toBe('Bob');
+  });
+
+  it('returns null for an unknown id', () => {
+    expect(taskService.assignTask('nope', 'Alice')).toBeNull();
+  });
+});
+
 describe('getStats', () => {
   it('counts tasks by status and overdue correctly', () => {
     taskService.create({ title: 'a', status: 'todo', dueDate: '2020-01-01T00:00:00.000Z' });
