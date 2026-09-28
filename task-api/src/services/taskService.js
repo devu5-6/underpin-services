@@ -9,8 +9,14 @@ const findById = (id) => tasks.find((t) => t.id === id);
 const getByStatus = (status) => tasks.filter((t) => t.status.includes(status));
 
 const getPaginated = (page, limit) => {
-  const offset = page * limit;
-  return tasks.slice(offset, offset + limit);
+  // FIX (BUG_REPORT.md #1): `page` is 1-based for API consumers (the route
+  // layer defaults it to 1), so the offset must be (page - 1) * limit.
+  // This previously computed page * limit, which made ?page=1 silently skip
+  // the first `limit` items - pagination was off by one page on every request.
+  const safePage = Math.max(Number(page) || 1, 1);
+  const safeLimit = Math.max(Number(limit) || 10, 1);
+  const offset = (safePage - 1) * safeLimit;
+  return tasks.slice(offset, offset + safeLimit);
 };
 
 const getStats = () => {
