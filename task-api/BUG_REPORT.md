@@ -8,7 +8,7 @@ suspiciously-passing test.
 **Status:** 1 of 4 fixed (Bug #1), per the brief's instruction to fix a single bug.
 The remaining three are left in place, with the source annotated in-line via
 `KNOWN BUG #n` comments, and each carries a regression test that documents the
-current behaviour.
+current behaviour. The suite is 73 tests in total, all passing.
 
 ## Summary
 
@@ -259,7 +259,7 @@ rather than bugs, and so are not counted in the four above:
 $ npm run coverage
 
 Test Suites: 3 passed, 3 total
-Tests:       65 passed, 65 total
+Tests:       73 passed, 73 total
 
 File             | % Stmts | % Branch | % Funcs | % Lines
 -----------------|---------|----------|---------|---------
@@ -274,7 +274,7 @@ All files        |   96.17 |     91.2 |   93.75 |   95.74
   validators.js  |    91.3 |     91.17 |     100 |    91.3
 ```
 
-All 65 tests pass, so the three open bugs are covered by tests that *assert the
+All 73 tests pass, so the three open bugs are covered by tests that *assert the
 current (incorrect) behaviour* and are named with a `BUG:` prefix. This is
 deliberate: it keeps the defects visible in CI and means fixing any of them is a
 matter of flipping an assertion, not discovering a new failure. The
