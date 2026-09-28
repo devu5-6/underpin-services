@@ -28,6 +28,29 @@ describe('GET /tasks', () => {
     const res = await request(app).get('/tasks').expect(200);
     expect(res.body).toHaveLength(2);
   });
+
+  it('returns tasks in insertion order', async () => {
+    await createTask({ title: 'first' });
+    await createTask({ title: 'second' });
+    await createTask({ title: 'third' });
+
+    const res = await request(app).get('/tasks').expect(200);
+    expect(res.body.map((t) => t.title)).toEqual(['first', 'second', 'third']);
+  });
+
+  // The store is a module-level array, so a response that handed back live
+  // references would let any client corrupt the data through a GET.
+  it('returns copies, so mutating the response does not mutate the store', async () => {
+    await createTask({ title: 'original' });
+
+    const res = await request(app).get('/tasks').expect(200);
+    res.body[0].title = 'mutated';
+    res.body.pop();
+
+    const second = await request(app).get('/tasks').expect(200);
+    expect(second.body).toHaveLength(1);
+    expect(second.body[0].title).toBe('original');
+  });
 });
 
 describe('GET /tasks?status=', () => {
@@ -197,6 +220,25 @@ describe('DELETE /tasks/:id', () => {
     const res = await request(app).delete('/tasks/does-not-exist').expect(404);
     expect(res.body.error).toBe('Task not found');
   });
+
+  it('returns 404 when the same id is deleted twice', async () => {
+    const created = (await createTask()).body;
+
+    await request(app).delete(`/tasks/${created.id}`).expect(204);
+    const res = await request(app).delete(`/tasks/${created.id}`).expect(404);
+    expect(res.body.error).toBe('Task not found');
+  });
+
+  it('deletes only the requested task and leaves the others intact', async () => {
+    const keep = (await createTask({ title: 'keep' })).body;
+    const drop = (await createTask({ title: 'drop' })).body;
+
+    await request(app).delete(`/tasks/${drop.id}`).expect(204);
+
+    const list = await request(app).get('/tasks').expect(200);
+    expect(list.body).toHaveLength(1);
+    expect(list.body[0].id).toBe(keep.id);
+  });
 });
 
 describe('PATCH /tasks/:id/complete', () => {
@@ -235,5 +277,38 @@ describe('GET /tasks/stats', () => {
   it('returns zeros when the store is empty', async () => {
     const res = await request(app).get('/tasks/stats').expect(200);
     expect(res.body).toEqual({ todo: 0, in_progress: 0, done: 0, overdue: 0 });
+  });
+
+  // A task that is not yet due must never be counted as overdue. A far-future
+  // date is used rather than "now" so the assertion cannot go flaky.
+  it('does not count a task with a future dueDate as overdue', async () => {
+    await createTask({ dueDate: '2030-01-01T00:00:00.000Z' });
+
+    const res = await request(app).get('/tasks/stats').expect(200);
+    expect(res.body).toEqual({ todo: 1, in_progress: 0, done: 0, overdue: 0 });
+  });
+
+  it('does not count a done task with a past dueDate as overdue', async () => {
+    await createTask({ status: 'done', dueDate: '2020-01-01T00:00:00.000Z' });
+
+    const res = await request(app).get('/tasks/stats').expect(200);
+    expect(res.body).toEqual({ todo: 0, in_progress: 0, done: 1, overdue: 0 });
+  });
+
+  it('counts in_progress tasks in their own bucket', async () => {
+    await createTask({ status: 'in_progress', dueDate: '2020-01-01T00:00:00.000Z' });
+
+    const res = await request(app).get('/tasks/stats').expect(200);
+    expect(res.body).toEqual({ todo: 0, in_progress: 1, done: 0, overdue: 1 });
+  });
+
+  // /stats is computed over the whole store, not just the page or filter in the
+  // query string, so the counts must not change when one is supplied.
+  it('ignores status, page and limit query parameters', async () => {
+    await createTask({ status: 'todo', dueDate: '2020-01-01T00:00:00.000Z' });
+    await createTask({ status: 'done' });
+
+    const res = await request(app).get('/tasks/stats?status=todo&page=1&limit=1').expect(200);
+    expect(res.body).toEqual({ todo: 1, in_progress: 0, done: 1, overdue: 1 });
   });
 });
