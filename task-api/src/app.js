@@ -4,6 +4,26 @@ const taskRoutes = require('./routes/tasks');
 const app = express();
 
 app.use(express.json());
+// Root health-check/index so visitors landing on the deployed URL see
+// something useful instead of Express's default 404 ("Cannot GET /").
+app.get('/', (req, res) => {
+  res.json({
+    status: 'ok',
+    service: 'Task Manager API',
+    endpoints: {
+      listAll: 'GET /tasks',
+      filterByStatus: 'GET /tasks?status=todo|in_progress|done',
+      paginate: 'GET /tasks?page=1&limit=10',
+      create: 'POST /tasks',
+      update: 'PUT /tasks/:id',
+      delete: 'DELETE /tasks/:id',
+      complete: 'PATCH /tasks/:id/complete',
+      assign: 'PATCH /tasks/:id/assign',
+      stats: 'GET /tasks/stats',
+    },
+  });
+});
+
 app.use('/tasks', taskRoutes);
 
 app.use((err, req, res, next) => {

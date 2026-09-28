@@ -15,6 +15,21 @@ const createTask = (overrides = {}) => {
   return request(app).post('/tasks').send(body).expect(201);
 };
 
+describe('GET /', () => {
+  // Health/index route so the deployed root URL returns something useful.
+  it('returns service status and an endpoint index', async () => {
+    const res = await request(app).get('/').expect(200);
+
+    expect(res.body.status).toBe('ok');
+    expect(res.body.service).toBe('Task Manager API');
+    expect(res.body.endpoints).toMatchObject({
+      listAll: 'GET /tasks',
+      assign: 'PATCH /tasks/:id/assign',
+      stats: 'GET /tasks/stats',
+    });
+  });
+});
+
 describe('GET /tasks', () => {
   it('returns an empty array when there are no tasks', async () => {
     const res = await request(app).get('/tasks').expect(200);
