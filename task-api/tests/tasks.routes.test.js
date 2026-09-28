@@ -45,6 +45,14 @@ describe('GET /tasks?status=', () => {
     const res = await request(app).get('/tasks?status=done').expect(200);
     expect(res.body).toEqual([]);
   });
+
+  // BUG #2 (BUG_REPORT.md): unknown statuses are not rejected — anything that
+  // is a substring of a real status returns results, anything else returns [].
+  it('BUG: accepts an unknown status string and does substring matching', async () => {
+    await createTask({ status: 'todo' });
+    const res = await request(app).get('/tasks?status=to').expect(200);
+    expect(res.body).toHaveLength(1); // expected: a 400 validation error
+  });
 });
 
 describe('GET /tasks pagination', () => {
@@ -67,6 +75,17 @@ describe('GET /tasks pagination', () => {
   it('falls back to sensible defaults for non-numeric values', async () => {
     const res = await request(app).get('/tasks?page=abc&limit=xyz').expect(200);
     expect(res.body).toHaveLength(10);
+  });
+
+  // FIXED BUG #1 (BUG_REPORT.md): page used to be treated as a 0-based
+  // offset, so ?page=1 skipped the first `limit` items. Now that the fix is
+  // in, page=1 must return the first page of results.
+  it('returns the first page of results when page=1 (bug #1 fixed)', async () => {
+    const res = await request(app).get('/tasks?page=1&limit=10').expect(200);
+    const firstPageTitles = res.body.map((t) => t.title);
+    const allTitles = (await request(app).get('/tasks').expect(200)).body.map((t) => t.title);
+
+    expect(firstPageTitles).toEqual(allTitles.slice(0, 10));
   });
 });
 
@@ -144,6 +163,23 @@ describe('PUT /tasks/:id', () => {
     const res = await request(app).put(`/tasks/${created.id}`).send({ status: 'bogus' }).expect(400);
     expect(res.body.error).toMatch(/status/i);
   });
+
+  // BUG #4 (BUG_REPORT.md): PUT spreads arbitrary body fields onto the task,
+  // so clients can overwrite id, createdAt and completedAt.
+  it('BUG: lets the client overwrite protected fields like id and createdAt', async () => {
+    const created = (await createTask()).body;
+
+    const res = await request(app)
+      .put(`/tasks/${created.id}`)
+      .send({ title: 'renamed', id: 'hacked', createdAt: '1999-01-01T00:00:00.000Z' })
+      .expect(200);
+
+    expect(res.body.id).toBe('hacked'); // expected: created.id
+    expect(res.body.createdAt).toBe('1999-01-01T00:00:00.000Z'); // expected: original
+
+    // ...and the corrupted id is now persisted in the store:
+    expect(taskService.findById(created.id)).toBeUndefined();
+  });
 });
 
 describe('DELETE /tasks/:id', () => {
@@ -175,6 +211,14 @@ describe('PATCH /tasks/:id/complete', () => {
   it('returns 404 for an unknown id', async () => {
     const res = await request(app).patch('/tasks/does-not-exist/complete').expect(404);
     expect(res.body.error).toBe('Task not found');
+  });
+
+  // BUG #3 (BUG_REPORT.md): completing a task resets its priority to 'medium'.
+  it('BUG: resets the priority to medium when completing', async () => {
+    const created = (await createTask({ priority: 'high' })).body;
+
+    const res = await request(app).patch(`/tasks/${created.id}/complete`).expect(200);
+    expect(res.body.priority).toBe('medium'); // expected: 'high'
   });
 });
 
