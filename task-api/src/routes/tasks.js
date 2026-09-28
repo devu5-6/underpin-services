@@ -3,6 +3,8 @@ const router = express.Router();
 const taskService = require('../services/taskService');
 const { validateCreateTask, validateUpdateTask } = require('../utils/validators');
 
+const VALID_STATUSES = ['todo', 'in_progress', 'done'];
+
 router.get('/stats', (req, res) => {
   const stats = taskService.getStats();
   res.json(stats);
@@ -62,6 +64,30 @@ router.delete('/:id', (req, res) => {
 
 router.patch('/:id/complete', (req, res) => {
   const task = taskService.completeTask(req.params.id);
+  if (!task) {
+    return res.status(404).json({ error: 'Task not found' });
+  }
+
+  res.json(task);
+});
+
+// NEW (Part C): assign a task to a user.
+// Validation rules (see SUBMISSION.md):
+//  - 400 when the body is missing or `assignee` is absent / not a string /
+//    empty or whitespace-only — a nameless assignment is meaningless.
+//  - 404 when the task doesn't exist (checked before any mutation).
+//  - Reassignment is intentionally allowed and just overwrites the previous
+//    assignee, refreshing `assignedAt` (ownership-transfer use case).
+router.patch('/:id/assign', (req, res) => {
+  const { assignee } = req.body || {};
+
+  if (typeof assignee !== 'string' || assignee.trim() === '') {
+    return res
+      .status(400)
+      .json({ error: 'assignee is required and must be a non-empty string' });
+  }
+
+  const task = taskService.assignTask(req.params.id, assignee.trim());
   if (!task) {
     return res.status(404).json({ error: 'Task not found' });
   }
